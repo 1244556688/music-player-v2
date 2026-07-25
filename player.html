@@ -51,7 +51,9 @@
         <canvas id="bgCanvas" class="absolute inset-0 w-full h-full opacity-60 block"></canvas>
     </div>
 
+    <!-- 隱藏的檔案上傳 inputs -->
     <input type="file" id="audioFileInput" accept="audio/*" multiple class="hidden">
+    <input type="file" id="jsonFileInput" accept=".json" class="hidden">
 
     <div id="playerWindow" class="relative z-10 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl border border-white/60 dark:border-white/10 glass-card bg-white/70 dark:bg-zinc-900/70 text-zinc-800 dark:text-zinc-100 transition-all duration-300 ease-in-out gpu-accelerated">
         
@@ -152,9 +154,17 @@
                 <div class="p-5 w-full md:w-80 flex flex-col h-full min-h-[420px]">
                     <div class="flex items-center justify-between mb-3 px-1">
                         <div class="text-xs font-semibold tracking-wider text-zinc-500 dark:text-zinc-400 uppercase">播放清單</div>
-                        <button id="drawerUploadBtn" class="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
-                            <i class="fa-solid fa-plus"></i> 新增本地歌曲
-                        </button>
+                        <div class="flex items-center gap-2">
+                            <button id="exportJsonBtn" class="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1" title="匯出 JSON 播放清單">
+                                <i class="fa-solid fa-file-arrow-down"></i> 匯出
+                            </button>
+                            <button id="importJsonBtn" class="text-[11px] text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1" title="讀取 JSON 播放清單">
+                                <i class="fa-solid fa-file-arrow-up"></i> 讀取
+                            </button>
+                            <button id="drawerUploadBtn" class="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
+                                <i class="fa-solid fa-plus"></i> 新增
+                            </button>
+                        </div>
                     </div>
                     <div id="playlistContainer" class="space-y-1.5 flex-1 max-h-[380px] overflow-y-auto pr-1"></div>
                 </div>
@@ -259,6 +269,7 @@
         const themeToggle = document.getElementById('themeToggle'), themeIcon = document.getElementById('themeIcon');
         const playlistToggle = document.getElementById('playlistToggle'), playlistDrawer = document.getElementById('playlistDrawer'), playlistContainer = document.getElementById('playlistContainer');
         const uploadBtn = document.getElementById('uploadBtn'), drawerUploadBtn = document.getElementById('drawerUploadBtn'), audioFileInput = document.getElementById('audioFileInput');
+        const exportJsonBtn = document.getElementById('exportJsonBtn'), importJsonBtn = document.getElementById('importJsonBtn'), jsonFileInput = document.getElementById('jsonFileInput');
         const bgBlob1 = document.getElementById('bgBlob1'), bgBlob2 = document.getElementById('bgBlob2'), bgBlob3 = document.getElementById('bgBlob3');
         const spectrumCanvas = document.getElementById('spectrumCanvas'), specCtx = spectrumCanvas.getContext('2d');
         const bgCanvas = document.getElementById('bgCanvas'), bgCtx = bgCanvas.getContext('2d');
@@ -283,10 +294,13 @@
             if (saved) {
                 try {
                     const settings = JSON.parse(saved);
-                    if (typeof settings.currentTrackIndex === 'number' && settings.currentTrackIndex < playlist.length) currentTrackIndex = settings.currentTrackIndex;
+                    if (typeof settings.currentTrackIndex === 'number' && settings.currentTrackIndex < playlist.length) {
+                        currentTrackIndex = settings.currentTrackIndex;
+                    }
                     if (settings.volume !== undefined) { volumeBar.value = settings.volume; audio.volume = settings.volume / 100; }
                     if (settings.isMuted !== undefined) { isMuted = settings.isMuted; audio.muted = isMuted; }
                     updateVolumeIcon();
+
                     if (settings.isShuffle) { isShuffle = true; shuffleBtn.classList.add('text-indigo-600', 'dark:text-indigo-400'); shuffleBtn.classList.remove('text-zinc-400'); }
                     if (settings.isRepeat) { isRepeat = true; repeatBtn.classList.add('text-indigo-600', 'dark:text-indigo-400'); repeatBtn.classList.remove('text-zinc-400'); }
                     
@@ -295,9 +309,18 @@
                     if (settings.isPlaylistOpen) togglePlaylistDrawer(true);
 
                     loadTrack(currentTrackIndex, false);
-                    if (settings.currentTime && !isNaN(settings.currentTime)) {
-                        const restoreTime = () => { audio.currentTime = settings.currentTime; audio.removeEventListener('loadedmetadata', restoreTime); };
-                        audio.addEventListener('loadedmetadata', restoreTime);
+
+                    // 修復點：等待 metadata 載入後才套用上次的播放進度，避免歸零
+                    if (settings.currentTime && !isNaN(settings.currentTime) && settings.currentTime > 0) {
+                        const restoreProgress = () => {
+                            audio.currentTime = settings.currentTime;
+                            if (audio.duration) {
+                                progressBar.value = (audio.currentTime / audio.duration) * 100;
+                                currentTimeEl.textContent = formatTime(audio.currentTime);
+                            }
+                            audio.removeEventListener('loadedmetadata', restoreProgress);
+                        };
+                        audio.addEventListener('loadedmetadata', restoreProgress);
                     }
                 } catch (e) { loadTrack(0, false); }
             } else { loadTrack(0, false); }
@@ -313,6 +336,44 @@
         fullscreenBtn.addEventListener('click', () => {
             if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
             else document.exitFullscreen();
+        });
+
+        // 鍵盤快速鍵支援
+        document.addEventListener('keydown', (event) => {
+            if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') return;
+
+            switch (event.code) {
+                case 'Space':
+                    event.preventDefault();
+                    togglePlay();
+                    break;
+                case 'ArrowRight':
+                    event.preventDefault();
+                    if (audio.duration) audio.currentTime = Math.min(audio.duration, audio.currentTime + 5);
+                    break;
+                case 'ArrowLeft':
+                    event.preventDefault();
+                    audio.currentTime = Math.max(0, audio.currentTime - 5);
+                    break;
+                case 'ArrowUp':
+                    event.preventDefault();
+                    audio.volume = Math.min(1, audio.volume + 0.05);
+                    volumeBar.value = audio.volume * 100;
+                    audio.muted = false; isMuted = false;
+                    updateVolumeIcon(); saveSettings();
+                    break;
+                case 'ArrowDown':
+                    event.preventDefault();
+                    audio.volume = Math.max(0, audio.volume - 0.05);
+                    volumeBar.value = audio.volume * 100;
+                    updateVolumeIcon(); saveSettings();
+                    break;
+                case 'KeyM':
+                    event.preventDefault();
+                    isMuted = !isMuted; audio.muted = isMuted;
+                    updateVolumeIcon(); saveSettings();
+                    break;
+            }
         });
 
         let resizeTimer;
@@ -537,6 +598,67 @@
             renderPlaylist();
         }
 
+        // --- JSON 匯出與匯入功能 ---
+        exportJsonBtn.addEventListener('click', () => {
+            // 只匯出清單的純文字中繼資料（排除 Blob 物件以免 JSON 檔案過大或無法序列化）
+            const exportData = playlist.map(track => ({
+                id: track.id,
+                title: track.title,
+                artist: track.artist,
+                src: track.src.startsWith('blob:') ? '' : track.src, // 若是本地 blob 則保留空字串或原路徑
+                themeColors: track.themeColors,
+                isPreset: track.isPreset
+            }));
+
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", `playlist_${currentUser}_${Date.now()}.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        });
+
+        importJsonBtn.addEventListener('click', () => jsonFileInput.click());
+
+        jsonFileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+                try {
+                    const importedTracks = JSON.parse(event.target.result);
+                    if (!Array.isArray(importedTracks)) throw new Error('無效的 JSON 格式');
+
+                    let addedCount = 0;
+                    for (const track of importedTracks) {
+                        // 檢查是否已存在相同 ID 或標題避免重複
+                        const exists = playlist.some(t => t.id === track.id || t.title === track.title);
+                        if (!exists) {
+                            const newTrack = {
+                                id: track.id || ('imported-' + Date.now() + '-' + Math.random()),
+                                title: track.title || '未知曲目',
+                                artist: track.artist || 'JSON 匯入',
+                                src: track.src || './為自己吶喊.mp3', // 預設路徑防呆
+                                themeColors: track.themeColors || ["#6366f1", "#a855f7", "#ec4899"],
+                                isPreset: false
+                            };
+                            await saveTrackToDB(newTrack);
+                            playlist.push(newTrack);
+                            addedCount++;
+                        }
+                    }
+                    renderPlaylist();
+                    alert(`成功從 JSON 讀取並新增 ${addedCount} 首歌曲！`);
+                } catch (err) {
+                    alert('JSON 解析失敗，請確認檔案格式是否正確。');
+                    console.error(err);
+                }
+                jsonFileInput.value = ''; // 清空以允許重複選取同個檔案
+            };
+            reader.readAsText(file);
+        });
+
         uploadBtn.addEventListener('click', () => audioFileInput.click());
         drawerUploadBtn.addEventListener('click', () => audioFileInput.click());
         audioFileInput.addEventListener('change', (e) => handleFiles(e.target.files));
@@ -578,4 +700,3 @@
     </script>
 </body>
 </html>
-
