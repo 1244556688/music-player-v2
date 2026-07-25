@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>登入 - 雲端動態音樂播放器</title>
+    <title>登入與註冊 - 雲端動態音樂播放器</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = { darkMode: 'class' }
@@ -20,41 +20,122 @@
         <div class="absolute bottom-0 right-0 w-96 h-96 bg-purple-500/20 dark:bg-purple-600/30 rounded-full blur-[80px]"></div>
     </div>
 
-    <div class="relative z-10 w-full max-w-sm p-8 rounded-3xl shadow-2xl border border-white/60 dark:border-white/10 glass-card bg-white/70 dark:bg-zinc-900/70 text-center">
-        <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-tr from-indigo-600 to-pink-500 flex items-center justify-center shadow-lg text-white text-2xl">
-            <i class="fa-solid fa-music"></i>
-        </div>
+    <div class="relative z-10 w-full max-w-sm p-8 rounded-3xl shadow-2xl border border-white/60 dark:border-white/10 glass-card bg-white/70 dark:bg-zinc-900/70">
         
-        <h1 class="text-2xl font-bold tracking-tight mb-1">音樂播放器</h1>
-        <p class="text-xs text-zinc-500 dark:text-zinc-400 mb-6">請輸入您的帳號以載入專屬音樂庫</p>
+        <!-- 頂部圖示與標題 -->
+        <div class="text-center mb-6">
+            <div class="w-16 h-16 mx-auto mb-3 rounded-2xl bg-gradient-to-tr from-indigo-600 to-pink-500 flex items-center justify-center shadow-lg text-white text-2xl">
+                <i class="fa-solid fa-music"></i>
+            </div>
+            <h1 class="text-2xl font-bold tracking-tight mb-1">音樂播放器</h1>
+            <p id="subTitle" class="text-xs text-zinc-500 dark:text-zinc-400">請登入您的專屬帳號</p>
+        </div>
 
-        <form id="loginForm" class="space-y-4">
+        <!-- 登入/註冊切換頁籤 -->
+        <div class="flex p-1 bg-black/5 dark:bg-zinc-800/60 rounded-xl mb-6">
+            <button id="tabLogin" onclick="switchTab('login')" class="flex-1 py-2 text-xs font-medium rounded-lg bg-indigo-600 text-white shadow transition-all">登入帳號</button>
+            <button id="tabRegister" onclick="switchTab('register')" class="flex-1 py-2 text-xs font-medium rounded-lg text-zinc-500 dark:text-zinc-400 transition-all">註冊新帳號</button>
+        </div>
+
+        <!-- 提示訊息 -->
+        <div id="alertMsg" class="hidden mb-4 p-3 rounded-xl text-xs font-medium bg-red-500/10 text-red-500 border border-red-500/20 text-center"></div>
+
+        <!-- 表單 -->
+        <form id="authForm" class="space-y-4">
             <div class="relative">
                 <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-zinc-400">
                     <i class="fa-solid fa-user text-xs"></i>
                 </span>
-                <input type="text" id="usernameInput" required placeholder="例如: UserA 或 UserB" 
+                <input type="text" id="usernameInput" required placeholder="請輸入帳號名稱" 
                     class="w-full pl-10 pr-4 py-3 rounded-xl bg-black/5 dark:bg-zinc-800/50 border border-black/10 dark:border-white/10 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
             </div>
 
-            <button type="submit" class="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium shadow-lg shadow-indigo-500/30 transition-all hover:scale-[1.02] active:scale-[0.98]">
-                進入系統
+            <div class="relative">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 text-zinc-400">
+                    <i class="fa-solid fa-lock text-xs"></i>
+                </span>
+                <input type="password" id="passwordInput" required placeholder="請輸入密碼" 
+                    class="w-full pl-10 pr-4 py-3 rounded-xl bg-black/5 dark:bg-zinc-800/50 border border-black/10 dark:border-white/10 text-sm focus:outline-none focus:border-indigo-500 transition-colors">
+            </div>
+
+            <button type="submit" id="submitBtn" class="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-medium shadow-lg shadow-indigo-500/30 transition-all hover:scale-[1.02] active:scale-[0.98]">
+                登入系統
             </button>
         </form>
     </div>
 
     <script>
-        // 如果已經有登入紀錄，直接導向說明頁
+        let currentMode = 'login'; // 'login' 或 'register'
+
+        // 如果已經有登入紀錄，直接跳轉說明頁
         if (localStorage.getItem('aura_current_user')) {
             window.location.href = 'help.html';
         }
 
-        document.getElementById('loginForm').addEventListener('submit', (e) => {
+        function switchTab(mode) {
+            currentMode = mode;
+            const tabLogin = document.getElementById('tabLogin');
+            const tabRegister = document.getElementById('tabRegister');
+            const subTitle = document.getElementById('subTitle');
+            const submitBtn = document.getElementById('submitBtn');
+            const alertMsg = document.getElementById('alertMsg');
+            alertMsg.classList.add('hidden');
+
+            if (mode === 'login') {
+                tabLogin.className = "flex-1 py-2 text-xs font-medium rounded-lg bg-indigo-600 text-white shadow transition-all";
+                tabRegister.className = "flex-1 py-2 text-xs font-medium rounded-lg text-zinc-500 dark:text-zinc-400 transition-all";
+                subTitle.textContent = "請登入您的專屬帳號";
+                submitBtn.textContent = "登入系統";
+            } else {
+                tabRegister.className = "flex-1 py-2 text-xs font-medium rounded-lg bg-indigo-600 text-white shadow transition-all";
+                tabLogin.className = "flex-1 py-2 text-xs font-medium rounded-lg text-zinc-500 dark:text-zinc-400 transition-all";
+                subTitle.textContent = "建立您的專屬音樂庫帳號";
+                submitBtn.textContent = "註冊並登入";
+            }
+        }
+
+        function showAlert(msg) {
+            const alertMsg = document.getElementById('alertMsg');
+            alertMsg.textContent = msg;
+            alertMsg.classList.remove('hidden');
+        }
+
+        document.getElementById('authForm').addEventListener('submit', (e) => {
             e.preventDefault();
             const username = document.getElementById('usernameInput').value.trim();
-            if (username) {
+            const password = document.getElementById('passwordInput').value.trim();
+
+            if (!username || !password) {
+                showAlert('請填寫帳號與密碼');
+                return;
+            }
+
+            // 取得已註冊的帳號清單 (格式: { username: password })
+            let users = JSON.parse(localStorage.getItem('aura_users') || '{}');
+
+            if (currentMode === 'register') {
+                if (users[username]) {
+                    showAlert('此帳號名稱已被註冊，請直接登入或更換帳號');
+                    return;
+                }
+                // 註冊成功並寫入
+                users[username] = password;
+                localStorage.setItem('aura_users', JSON.stringify(users));
                 localStorage.setItem('aura_current_user', username);
-                window.location.href = 'help.html'; // 導向說明頁
+                window.location.href = 'help.html';
+            } else {
+                // 登入驗證
+                if (!users[username]) {
+                    showAlert('此帳號不存在，請先註冊');
+                    return;
+                }
+                if (users[username] !== password) {
+                    showAlert('密碼錯誤，請重新輸入');
+                    return;
+                }
+                // 登入成功
+                localStorage.setItem('aura_current_user', username);
+                window.location.href = 'help.html';
             }
         });
     </script>
