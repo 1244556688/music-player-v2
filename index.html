@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aura Ambient Player - 登入與註冊</title>
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -30,14 +29,12 @@
 </head>
 <body class="bg-slate-50 dark:bg-[#0f0f13] text-slate-900 dark:text-slate-100 min-h-screen flex items-center justify-center p-4 font-sans relative overflow-hidden select-none">
 
-    <!-- 全螢幕動態流光背景 -->
     <div class="fixed inset-0 pointer-events-none z-0 overflow-hidden gpu-accelerated">
         <div class="absolute -top-32 -left-32 w-[30rem] h-[30rem] bg-indigo-400/40 dark:bg-indigo-600/30 rounded-full blur-[80px]"></div>
         <div class="absolute top-1/2 -right-32 w-[35rem] h-[35rem] bg-cyan-400/30 dark:bg-purple-600/30 rounded-full blur-[90px]"></div>
         <div class="absolute -bottom-40 left-1/4 w-[40rem] h-[40rem] bg-pink-400/30 dark:bg-pink-700/20 rounded-full blur-[100px]"></div>
     </div>
 
-    <!-- 登入/註冊卡片 -->
     <div class="relative z-10 w-full max-w-sm p-8 rounded-[32px] glass-card bg-white/70 dark:bg-[#1e1e24]/80 border border-white/50 dark:border-white/10 text-zinc-800 dark:text-zinc-100 shadow-glass-light dark:shadow-glass">
         
         <div class="w-14 h-14 rounded-2xl bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center mb-6 text-indigo-600 dark:text-indigo-400 text-2xl border border-indigo-200 dark:border-indigo-500/30 shadow-inner">
@@ -95,7 +92,8 @@
         // 切換 登入 / 註冊 模式
         switchAuthModeBtn.addEventListener('click', () => {
             isRegisterMode = !isRegisterMode;
-            authErrorMsg.classList.add('hidden');
+            authErrorMsg.classList.add('hidden'); // 切換模式時清除錯誤訊息
+            
             if (isRegisterMode) {
                 authCardTitle.textContent = "建立帳號";
                 authCardSubtitle.textContent = "註冊新帳號以儲存偏好";
@@ -120,33 +118,62 @@
             const password = document.getElementById('passwordInput').value.trim();
 
             if (isRegisterMode) {
+                // 【註冊模式】
                 const confirmPassword = confirmPasswordInput.value.trim();
                 if (password !== confirmPassword) {
                     authErrorMsg.textContent = "兩次輸入的密碼不一致！";
                     authErrorMsg.classList.remove('hidden');
                     return;
                 }
+                
+                // 檢查帳號是否已經存在
+                if (localStorage.getItem('aura_user_' + username)) {
+                    authErrorMsg.textContent = "這個帳號已經被註冊過了喔！";
+                    authErrorMsg.classList.remove('hidden');
+                    return;
+                }
+
+                // 儲存密碼完成註冊
                 localStorage.setItem('aura_user_' + username, password);
-                alert("註冊成功！");
+                alert("註冊成功！請點擊「確認」並重新登入帳號。");
+                
+                // 註冊成功後自動切換回登入模式，清空密碼欄位
+                document.getElementById('passwordInput').value = '';
+                confirmPasswordInput.value = '';
+                switchAuthModeBtn.click(); 
+                return; 
+
             } else {
+                // 【登入模式】
                 const savedPassword = localStorage.getItem('aura_user_' + username);
-                if (savedPassword && savedPassword !== password) {
+                
+                // 如果找不到這個帳號
+                if (!savedPassword) {
+                    authErrorMsg.textContent = "找不到此帳號，請先建立新帳號！";
+                    authErrorMsg.classList.remove('hidden');
+                    return;
+                }
+                
+                // 如果密碼錯誤
+                if (savedPassword !== password) {
                     authErrorMsg.textContent = "密碼錯誤！";
                     authErrorMsg.classList.remove('hidden');
                     return;
                 }
             }
 
-            // 登入成功，將用戶名存入 localStorage 並跳轉到播放器頁面 (假設你的播放器叫做 player.html)
+            // 登入成功，將用戶名存入 localStorage 並跳轉到播放器頁面
+            // ⚠️ 注意：這裡的跳轉目標是 help.html，請確保這是你播放器的網頁名稱
             localStorage.setItem('aura_current_user', username);
-            window.location.href = 'help.html';
+            window.location.href = 'help.html'; 
         }
 
         // 訪客登入
         function loginAsGuest() {
             localStorage.setItem('aura_current_user', '訪客');
-            window.location.href = 'player.html';
+            window.location.href = 'help.html'; // 統一跳轉到同一個播放器頁面
         }
     </script>
 </body>
 </html>
+
