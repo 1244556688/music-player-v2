@@ -1,56 +1,52 @@
-// js/database.js
-const DB_NAME = 'AuraPlayerDB';
-const STORE_NAME = 'songs';
-const DB_VERSION = 1;
+// js/database.js (確保有這兩個匯出/匯入用的方法)
+const dbModule = {
+    db: null,
+    
+    initDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open('MusicPlayerDB', 1);
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+                this.db = request.result;
+                resolve(this.db);
+            };
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains('songs')) {
+                    db.createObjectStore('songs', { keyPath: 'id' });
+                }
+            };
+        });
+    },
 
-let db;
+    getAllSongs() {
+        return new Promise((resolve, reject) => {
+            if (!this.db) return resolve([]);
+            const transaction = this.db.transaction(['songs'], 'readonly');
+            const store = transaction.objectStore('songs');
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    },
 
-const initDB = () => {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
+    saveSong(song) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['songs'], 'readwrite');
+            const store = transaction.objectStore('songs');
+            const request = store.put(song);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    },
 
-        request.onerror = (event) => reject('Database error: ' + event.target.errorCode);
-        request.onsuccess = (event) => {
-            db = event.target.result;
-            resolve(db);
-        };
-        request.onupgradeneeded = (event) => {
-            const db = event.target.result;
-            if (!db.objectStoreNames.contains(STORE_NAME)) {
-                db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-            }
-        };
-    });
+    deleteSong(id) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['songs'], 'readwrite');
+            const store = transaction.objectStore('songs');
+            const request = store.delete(id);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
 };
-
-const saveSong = async (songData) => {
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction([STORE_NAME], 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-        const request = store.put(songData);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject('Error saving song');
-    });
-};
-
-const getAllSongs = async () => {
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction([STORE_NAME], 'readonly');
-        const store = transaction.objectStore(STORE_NAME);
-        const request = store.getAll();
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject('Error fetching songs');
-    });
-};
-
-const deleteSong = async (id) => {
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction([STORE_NAME], 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-        const request = store.delete(id);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject('Error deleting song');
-    });
-};
-
-window.dbModule = { initDB, saveSong, getAllSongs, deleteSong };
