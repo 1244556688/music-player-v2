@@ -55,7 +55,7 @@
 
         /* 登出按鈕懸停特效 */
         .logout-btn-group:hover .logout-btn-icon { opacity: 1; }
-        .logout-btn-icon { opacity: 0; font-size: 7px; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center; }
+        .logout-btn-icon { opacity: 0; font-size: 8px; transition: opacity 0.2s; display: flex; align-items: center; justify-content: center; }
     </style>
 </head>
 <body class="bg-slate-100 dark:bg-zinc-950 text-slate-900 dark:text-slate-100 min-h-screen flex items-center justify-center p-4 sm:p-6 font-sans relative overflow-hidden select-none transition-colors duration-300">
@@ -73,13 +73,12 @@
     <!-- 隱藏的上傳 Input -->
     <input type="file" id="audioFileInput" accept="audio/*" multiple class="hidden">
 
-    <!-- 主播放器面板（支援深淺色 toggle） -->
+    <!-- 主播放器面板 -->
     <div id="playerWindow" class="relative z-10 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl border border-white/60 dark:border-white/10 glass-card bg-white/70 dark:bg-zinc-900/70 text-zinc-800 dark:text-zinc-100 transition-all duration-300 ease-in-out gpu-accelerated">
         
         <!-- macOS 風格標題列 -->
         <div class="flex items-center justify-between px-5 py-3.5 border-b border-black/10 dark:border-white/10 bg-black/5 dark:bg-black/20">
             <div class="flex items-center space-x-2 logout-btn-group">
-                <!-- 紅色按鈕：點擊登出 / 返回登入頁面 -->
                 <button onclick="handleLogout()" class="w-3 h-3 rounded-full bg-red-500 hover:bg-red-600 transition-transform hover:scale-110 flex items-center justify-center text-black/70 cursor-pointer" title="登出帳號">
                     <i class="fa-solid fa-power-off logout-btn-icon"></i>
                 </button>
@@ -206,8 +205,8 @@
 
     </div>
 
-    <!-- 登入與登出狀態控制腳本 -->
     <script>
+        // --- 初始化帳戶 ---
         document.addEventListener('DOMContentLoaded', () => {
             const currentUser = localStorage.getItem('aura_current_user');
             const displayUsername = document.getElementById('displayUsername');
@@ -220,11 +219,10 @@
 
         function handleLogout() {
             localStorage.removeItem('aura_current_user');
-            window.location.href = 'index.html';
+            window.location.href = 'index.html'; // 假定你有 index.html，無則會報錯但不影響目前畫面
         }
-    </script>
 
-    <script>
+        // --- 音樂資料與變數 ---
         const presetPlaylist = [
             {
                 title: "為自己吶喊",
@@ -255,6 +253,7 @@
         let analyser = null;
         let sourceNode = null;
 
+        // --- DOM 元素綁定 ---
         const playerWindow = document.getElementById('playerWindow');
         const fullscreenBtn = document.getElementById('fullscreenBtn');
         const playBtn = document.getElementById('playBtn');
@@ -290,6 +289,7 @@
         const bgCanvas = document.getElementById('bgCanvas');
         const bgCtx = bgCanvas.getContext('2d');
 
+        // --- 主題切換 ---
         themeToggle.addEventListener('click', () => {
             const html = document.documentElement;
             html.classList.toggle('dark');
@@ -297,6 +297,7 @@
             themeIcon.className = isDark ? "fa-solid fa-moon" : "fa-solid fa-sun";
         });
 
+        // --- 全螢幕功能 ---
         fullscreenBtn.addEventListener('click', () => {
             if (!document.fullscreenElement) {
                 document.documentElement.requestFullscreen().catch(() => {});
@@ -305,6 +306,7 @@
             }
         });
 
+        // --- 抽屜切換與 Canvas RWD ---
         let resizeTimer;
         playlistToggle.addEventListener('click', () => {
             isPlaylistOpen = !isPlaylistOpen;
@@ -322,13 +324,14 @@
         });
 
         function resizeCanvases() {
+            const dpr = window.devicePixelRatio || 1;
             const specRect = spectrumCanvas.getBoundingClientRect();
             if (specRect.width > 0 && specRect.height > 0) {
-                spectrumCanvas.width = Math.floor(specRect.width * (window.devicePixelRatio || 1));
-                spectrumCanvas.height = Math.floor(specRect.height * (window.devicePixelRatio || 1));
+                spectrumCanvas.width = Math.floor(specRect.width * dpr);
+                spectrumCanvas.height = Math.floor(specRect.height * dpr);
             }
-            bgCanvas.width = window.innerWidth;
-            bgCanvas.height = window.innerHeight;
+            bgCanvas.width = Math.floor(window.innerWidth * dpr);
+            bgCanvas.height = Math.floor(window.innerHeight * dpr);
         }
 
         window.addEventListener('resize', () => {
@@ -337,6 +340,7 @@
         });
         setTimeout(resizeCanvases, 50);
 
+        // --- Web Audio API 初始化 ---
         function initAudioContext() {
             if (audioCtx) return;
             try {
@@ -350,6 +354,7 @@
             } catch (e) { console.warn(e); }
         }
 
+        // --- 動畫繪製 ---
         function drawSpectrum() {
             requestAnimationFrame(drawSpectrum);
             const w = spectrumCanvas.width;
@@ -407,8 +412,7 @@
 
             bgCtx.clearRect(0, 0, w, h);
 
-            let bassVal = 0;
-            let midVal = 0;
+            let bassVal = 0, midVal = 0;
 
             if (analyser && isPlaying) {
                 const freqData = new Uint8Array(analyser.frequencyBinCount);
@@ -435,7 +439,7 @@
             if (!isPlaying) return;
 
             const currentColors = playlist[currentTrackIndex]?.themeColors || ["#6366f1", "#a855f7", "#ec4899"];
-
+            
             for (let j = 0; j < 3; j++) {
                 bgCtx.beginPath();
                 bgCtx.moveTo(0, h / 2);
@@ -446,12 +450,21 @@
                     bgCtx.lineTo(x, y);
                 }
                 bgCtx.strokeStyle = currentColors[j % currentColors.length];
-                bgCtx.lineWidth = 2 + j;
+                bgCtx.lineWidth = (2 + j) * (window.devicePixelRatio || 1); // 配合 Retina 螢幕粗細
                 bgCtx.globalAlpha = 0.15 + (bassVal / 255) * 0.2;
                 bgCtx.stroke();
             }
         }
 
+        // Hex 轉 RGBA (保留 Tailwind 的透明度效果)
+        function hexToRgba(hex, alpha) {
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+
+        // --- 播放器核心邏輯 ---
         function loadTrack(index) {
             const track = playlist[index];
             songTitle.textContent = track.title;
@@ -459,9 +472,11 @@
 
             const colors = track.themeColors || ["#6366f1", "#a855f7", "#ec4899"];
             vinylGlow.style.background = `linear-gradient(to right, ${colors[0]}, ${colors[1]}, ${colors[2]})`;
-            bgBlob1.style.backgroundColor = colors[0];
-            bgBlob2.style.backgroundColor = colors[1];
-            bgBlob3.style.backgroundColor = colors[2];
+            
+            // 修正：補上透明度，避免覆寫原先的 Tailwind 半透明效果
+            bgBlob1.style.backgroundColor = hexToRgba(colors[0], 0.3); // /30
+            bgBlob2.style.backgroundColor = hexToRgba(colors[1], 0.4); // /40
+            bgBlob3.style.backgroundColor = hexToRgba(colors[2], 0.2); // /20
 
             audio.src = track.src;
             audio.currentTime = 0;
@@ -478,21 +493,32 @@
             return `${m}:${s < 10 ? '0' : ''}${s}`;
         }
 
-        function togglePlay() {
+        // 安全播放機制 (加上 Promise 失敗攔截)
+        function playAudioSafe() {
             initAudioContext();
             if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+            
+            audio.play().then(() => {
+                isPlaying = true;
+                playIcon.className = "fa-solid fa-pause";
+                vinylDisk.classList.remove('vinyl-paused');
+            }).catch(err => {
+                console.warn("播放失敗 (可能檔案不存在或瀏覽器阻擋):", err);
+                isPlaying = false;
+                playIcon.className = "fa-solid fa-play ml-0.5";
+                vinylDisk.classList.add('vinyl-paused');
+                alert("播放失敗！若是預設音樂，請確認檔案是否存在。您可以點擊「上傳音樂」新增本地歌曲。");
+            });
+        }
 
+        function togglePlay() {
             if (isPlaying) {
                 audio.pause();
                 isPlaying = false;
                 playIcon.className = "fa-solid fa-play ml-0.5";
                 vinylDisk.classList.add('vinyl-paused');
             } else {
-                audio.play().then(() => {
-                    isPlaying = true;
-                    playIcon.className = "fa-solid fa-pause";
-                    vinylDisk.classList.remove('vinyl-paused');
-                }).catch(err => console.log(err));
+                playAudioSafe();
             }
         }
 
@@ -508,23 +534,31 @@
         audio.addEventListener('ended', () => {
             if (isRepeat) {
                 audio.currentTime = 0;
-                audio.play();
+                playAudioSafe();
             } else {
                 nextTrack();
             }
         });
 
         function nextTrack() {
-            if (isShuffle) currentTrackIndex = Math.floor(Math.random() * playlist.length);
-            else currentTrackIndex = (currentTrackIndex + 1) % playlist.length;
+            if (isShuffle) {
+                let nextIdx = currentTrackIndex;
+                // 防呆機制：隨機播放不會抽到跟當前同一首歌
+                while(nextIdx === currentTrackIndex && playlist.length > 1) {
+                    nextIdx = Math.floor(Math.random() * playlist.length);
+                }
+                currentTrackIndex = nextIdx;
+            } else {
+                currentTrackIndex = (currentTrackIndex + 1) % playlist.length;
+            }
             loadTrack(currentTrackIndex);
-            if (isPlaying) audio.play();
+            if (isPlaying) playAudioSafe();
         }
 
         function prevTrack() {
             currentTrackIndex = (currentTrackIndex - 1 + playlist.length) % playlist.length;
             loadTrack(currentTrackIndex);
-            if (isPlaying) audio.play();
+            if (isPlaying) playAudioSafe();
         }
 
         progressBar.addEventListener('input', (e) => {
@@ -561,6 +595,7 @@
             repeatBtn.classList.toggle('text-zinc-400', !isRepeat);
         });
 
+        // --- 本地檔案上傳支援 ---
         function handleFiles(files) {
             if (!files || files.length === 0) return;
             let firstUploadedIndex = playlist.length;
@@ -584,12 +619,7 @@
             renderPlaylist();
             currentTrackIndex = firstUploadedIndex;
             loadTrack(currentTrackIndex);
-            initAudioContext();
-            audio.play().then(() => {
-                isPlaying = true;
-                playIcon.className = "fa-solid fa-pause";
-                vinylDisk.classList.remove('vinyl-paused');
-            }).catch(() => {});
+            playAudioSafe();
         }
 
         uploadBtn.addEventListener('click', () => audioFileInput.click());
@@ -604,6 +634,7 @@
             }
         });
 
+        // --- 渲染清單 ---
         function renderPlaylist() {
             playlistContainer.innerHTML = '';
             playlist.forEach((item, idx) => {
@@ -629,17 +660,13 @@
                 row.addEventListener('click', () => {
                     currentTrackIndex = idx;
                     loadTrack(currentTrackIndex);
-                    initAudioContext();
-                    audio.play().then(() => {
-                        isPlaying = true;
-                        playIcon.className = "fa-solid fa-pause";
-                        vinylDisk.classList.remove('vinyl-paused');
-                    });
+                    playAudioSafe();
                 });
                 playlistContainer.appendChild(row);
             });
         }
 
+        // --- 初始化綁定 ---
         playBtn.addEventListener('click', togglePlay);
         nextBtn.addEventListener('click', nextTrack);
         prevBtn.addEventListener('click', prevTrack);
