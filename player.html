@@ -111,8 +111,8 @@
                 </div>
 
                 <div class="w-full text-center mt-3 mb-2">
-                    <h2 id="songTitle" class="text-xl sm:text-2xl font-bold tracking-tight truncate text-zinc-800 dark:text-zinc-100">Midnight Breeze</h2>
-                    <p id="artistName" class="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 font-medium truncate mt-0.5">Lofi Chillout Lounge</p>
+                    <h2 id="songTitle" class="text-xl sm:text-2xl font-bold tracking-tight truncate text-zinc-800 dark:text-zinc-100">載入中...</h2>
+                    <p id="artistName" class="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 font-medium truncate mt-0.5">Please wait</p>
                 </div>
 
                 <div class="w-full space-y-1.5 my-3">
@@ -164,12 +164,27 @@
     </div>
 
     <script>
-        // 🌟 核心：根據當前登入的使用者隔離 IndexedDB 與 LocalStorage
-        const currentUser = localStorage.getItem('aura_current_user') || '訪客';
-        const DB_NAME = 'MusicPlayerDB_' + currentUser;
-        const STORE_NAME = 'uploaded_tracks';
-        const SETTINGS_KEY = 'player_settings_' + currentUser;
+        // === 登入與多帳號核心邏輯 ===
+        // 取得當前使用者，如果沒有，跳出提示要求輸入 (方便單頁測試多帳號)
+        let currentUser = localStorage.getItem('aura_current_user');
+        if (!currentUser) {
+            currentUser = prompt("請輸入您的使用者名稱以登入 (例如: UserA)：", "訪客") || "訪客";
+            localStorage.setItem('aura_current_user', currentUser);
+        }
 
+        const DB_NAME = 'MusicPlayerDB_' + currentUser; // 依照帳號動態產生資料庫名稱
+        const STORE_NAME = 'uploaded_tracks';
+        const SETTINGS_KEY = 'player_settings_' + currentUser; // 依照帳號獨立儲存設定
+
+        // 登出功能
+        function handleLogout() {
+            localStorage.removeItem('aura_current_user');
+            window.location.reload(); // 重新整理頁面觸發重新登入
+        }
+
+        document.getElementById('displayUsername').textContent = currentUser;
+
+        // === IndexedDB 資料庫操作 ===
         function openDB() {
             return new Promise((resolve, reject) => {
                 const request = indexedDB.open(DB_NAME, 1);
@@ -223,30 +238,22 @@
             } catch (e) { console.error('IndexedDB 刪除失敗:', e); }
         }
 
-        // --- 初始化帳戶顯示 ---
-        document.addEventListener('DOMContentLoaded', () => {
-            const displayUsername = document.getElementById('displayUsername');
-            displayUsername.textContent = currentUser;
-        });
-
-        function handleLogout() {
-            localStorage.removeItem('aura_current_user');
-            window.location.href = 'index.html'; // 登出後跳回登入頁
-        }
-
+        // === 播放器狀態與變數 ===
         const presetPlaylist = [
-            { id: 'preset-1', title: "為自己吶喊", artist: "justin & suno", src: "./為自己吶喊.mp3", themeColors: ["#6366f1", "#a855f7", "#ec4899"], isPreset: true },
-            { id: 'preset-2', title: "passion", artist: "youtube", src: "passion.mp3", themeColors: ["#06b6d4", "#3b82f6", "#6366f1"], isPreset: true }
+            { id: 'preset-1', title: "預設範例音樂 1", artist: "系統預設", src: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", themeColors: ["#6366f1", "#a855f7", "#ec4899"], isPreset: true },
+            { id: 'preset-2', title: "預設範例音樂 2", artist: "系統預設", src: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3", themeColors: ["#06b6d4", "#3b82f6", "#6366f1"], isPreset: true }
         ];
 
-        let playlist = [...presetPlaylist];
+        let playlist = [];
         let currentTrackIndex = 0;
         let isPlaying = false, isMuted = false, isShuffle = false, isRepeat = false, isPlaylistOpen = false;
 
         const audio = new Audio();
-        audio.crossOrigin = "anonymous";
+        // ★重要修復：移除 audio.crossOrigin = "anonymous"; 因為它會導致 Blob (本地上傳) 網址無法播放發生 CORS 錯誤
+
         let audioCtx = null, analyser = null, sourceNode = null;
 
+        // UI 綁定
         const playerWindow = document.getElementById('playerWindow'), fullscreenBtn = document.getElementById('fullscreenBtn');
         const playBtn = document.getElementById('playBtn'), playIcon = document.getElementById('playIcon');
         const prevBtn = document.getElementById('prevBtn'), nextBtn = document.getElementById('nextBtn');
@@ -262,10 +269,13 @@
         const spectrumCanvas = document.getElementById('spectrumCanvas'), specCtx = spectrumCanvas.getContext('2d');
         const bgCanvas = document.getElementById('bgCanvas'), bgCtx = bgCanvas.getContext('2d');
 
+        // === 設定與初始化 ===
         function saveSettings() {
             try {
                 const settings = {
-                    currentTrackIndex, currentTime: audio.currentTime || 0, volume: volumeBar.value,
+                    currentTrackIndex, 
+                    currentTime: audio.currentTime || 0, 
+                    volume: volumeBar.value,
                     isMuted, isShuffle, isRepeat, isPlaylistOpen,
                     theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light'
                 };
@@ -273,36 +283,63 @@
             } catch (e) { console.error('LocalStorage 寫入失敗:', e); }
         }
 
-        async function loadSettingsAndPlaylist() {
+        async function initPlayer() {
+            // 1. 從資料庫讀取專屬此帳號的歌曲
             const savedTracks = await loadTracksFromDB();
-            savedTracks.forEach(track => { if (track.fileBlob) track.src = URL.createObjectURL(track.fileBlob); });
+            
+            // 2. 將 Blob 轉化為可播放的 URL
+            savedTracks.forEach(track => { 
+                if (track.fileBlob) track.src = URL.createObjectURL(track.fileBlob); 
+            });
+            
+            // 3. 合併預設與上傳清單
             playlist = [...presetPlaylist, ...savedTracks];
 
+            // 4. 讀取個人設定
             const saved = localStorage.getItem(SETTINGS_KEY);
             if (saved) {
                 try {
                     const settings = JSON.parse(saved);
-                    if (typeof settings.currentTrackIndex === 'number' && settings.currentTrackIndex < playlist.length) currentTrackIndex = settings.currentTrackIndex;
-                    if (settings.volume !== undefined) { volumeBar.value = settings.volume; audio.volume = settings.volume / 100; }
-                    if (settings.isMuted !== undefined) { isMuted = settings.isMuted; audio.muted = isMuted; }
+                    if (typeof settings.currentTrackIndex === 'number' && settings.currentTrackIndex < playlist.length) {
+                        currentTrackIndex = settings.currentTrackIndex;
+                    }
+                    if (settings.volume !== undefined) { 
+                        volumeBar.value = settings.volume; audio.volume = settings.volume / 100; 
+                    }
+                    if (settings.isMuted !== undefined) { 
+                        isMuted = settings.isMuted; audio.muted = isMuted; 
+                    }
                     updateVolumeIcon();
+
                     if (settings.isShuffle) { isShuffle = true; shuffleBtn.classList.add('text-indigo-600', 'dark:text-indigo-400'); shuffleBtn.classList.remove('text-zinc-400'); }
                     if (settings.isRepeat) { isRepeat = true; repeatBtn.classList.add('text-indigo-600', 'dark:text-indigo-400'); repeatBtn.classList.remove('text-zinc-400'); }
                     
-                    if (settings.theme === 'light') { document.documentElement.classList.remove('dark'); themeIcon.className = "fa-solid fa-sun"; } 
-                    else { document.documentElement.classList.add('dark'); themeIcon.className = "fa-solid fa-moon"; }
+                    if (settings.theme === 'light') { 
+                        document.documentElement.classList.remove('dark'); themeIcon.className = "fa-solid fa-sun"; 
+                    } else { 
+                        document.documentElement.classList.add('dark'); themeIcon.className = "fa-solid fa-moon"; 
+                    }
                     if (settings.isPlaylistOpen) togglePlaylistDrawer(true);
 
                     loadTrack(currentTrackIndex, false);
+                    
                     if (settings.currentTime && !isNaN(settings.currentTime)) {
-                        const restoreTime = () => { audio.currentTime = settings.currentTime; audio.removeEventListener('loadedmetadata', restoreTime); };
+                        const restoreTime = () => { 
+                            audio.currentTime = settings.currentTime; 
+                            audio.removeEventListener('loadedmetadata', restoreTime); 
+                        };
                         audio.addEventListener('loadedmetadata', restoreTime);
                     }
                 } catch (e) { loadTrack(0, false); }
-            } else { loadTrack(0, false); }
+            } else { 
+                loadTrack(0, false); 
+            }
+            
+            // 5. 渲染UI
             renderPlaylist();
         }
 
+        // === UI 與事件 ===
         themeToggle.addEventListener('click', () => {
             document.documentElement.classList.toggle('dark');
             themeIcon.className = document.documentElement.classList.contains('dark') ? "fa-solid fa-moon" : "fa-solid fa-sun";
@@ -343,14 +380,17 @@
         window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(resizeCanvases, 100); });
         setTimeout(resizeCanvases, 50);
 
+        // === 音訊視覺化 ===
         function initAudioContext() {
             if (audioCtx) return;
             try {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                analyser = audioCtx.createAnalyser(); analyser.fftSize = 64;
+                analyser = audioCtx.createAnalyser(); 
+                analyser.fftSize = 64;
                 sourceNode = audioCtx.createMediaElementSource(audio);
-                sourceNode.connect(analyser); analyser.connect(audioCtx.destination);
-            } catch (e) { console.warn(e); }
+                sourceNode.connect(analyser); 
+                analyser.connect(audioCtx.destination);
+            } catch (e) { console.warn('AudioContext 無法初始化:', e); }
         }
 
         function drawSpectrum() {
@@ -360,13 +400,17 @@
             specCtx.clearRect(0, 0, w, h);
             const barCount = 32, barWidth = (w / barCount) * 0.6, gap = (w / barCount) * 0.4;
             let dataArray = new Uint8Array(barCount);
+            
             if (analyser && isPlaying) {
-                const fullData = new Uint8Array(analyser.frequencyBinCount); analyser.getByteFrequencyData(fullData);
+                const fullData = new Uint8Array(analyser.frequencyBinCount); 
+                analyser.getByteFrequencyData(fullData);
                 for (let i = 0; i < barCount; i++) dataArray[i] = fullData[i % fullData.length];
             } else if (isPlaying) {
                 const time = Date.now() * 0.005;
                 for (let i = 0; i < barCount; i++) dataArray[i] = Math.max(15, Math.sin(time + i * 0.3) * 90 + Math.cos(time * 1.2 + i) * 70 + 90);
-            } else { for (let i = 0; i < barCount; i++) dataArray[i] = 8; }
+            } else { 
+                for (let i = 0; i < barCount; i++) dataArray[i] = 8; 
+            }
 
             const currentColors = playlist[currentTrackIndex]?.themeColors || ["#6366f1", "#a855f7", "#ec4899"];
             for (let i = 0; i < barCount; i++) {
@@ -391,12 +435,16 @@
 
             if (analyser && isPlaying) {
                 const freqData = new Uint8Array(analyser.frequencyBinCount); analyser.getByteFrequencyData(freqData);
-                bassVal = (freqData[0] + freqData[1] + freqData[2] + freqData[3]) / 4; midVal = (freqData[4] + freqData[5] + freqData[6] + freqData[7]) / 4;
+                bassVal = (freqData[0] + freqData[1] + freqData[2] + freqData[3]) / 4; 
+                midVal = (freqData[4] + freqData[5] + freqData[6] + freqData[7]) / 4;
             } else if (isPlaying) {
                 bassVal = (Math.sin(bgTime * 4) + 1) * 60; midVal = (Math.cos(bgTime * 3) + 1) * 40;
             }
+            
             const bassScale = 1 + (bassVal / 255) * 0.35, midScale = 1 + (midVal / 255) * 0.25;
-            if (bgBlob1) bgBlob1.style.transform = `scale(${bassScale})`; if (bgBlob2) bgBlob2.style.transform = `scale(${midScale})`; if (bgBlob3) bgBlob3.style.transform = `scale(${bassScale * 0.9})`;
+            if (bgBlob1) bgBlob1.style.transform = `scale(${bassScale})`; 
+            if (bgBlob2) bgBlob2.style.transform = `scale(${midScale})`; 
+            if (bgBlob3) bgBlob3.style.transform = `scale(${bassScale * 0.9})`;
             if (vinylGlow) vinylGlow.style.transform = `scale(${1 + (bassVal / 255) * 0.2})`;
 
             if (!isPlaying) return;
@@ -418,6 +466,7 @@
             return `rgba(${r}, ${g}, ${b}, ${alpha})`;
         }
 
+        // === 播放控制 ===
         function loadTrack(index, autoSave = true) {
             if (!playlist || playlist.length === 0) return;
             if (index < 0 || index >= playlist.length) index = 0;
@@ -426,9 +475,13 @@
             songTitle.textContent = track.title; artistName.textContent = track.artist;
             const colors = track.themeColors || ["#6366f1", "#a855f7", "#ec4899"];
             vinylGlow.style.background = `linear-gradient(to right, ${colors[0]}, ${colors[1]}, ${colors[2]})`;
-            bgBlob1.style.backgroundColor = hexToRgba(colors[0], 0.3); bgBlob2.style.backgroundColor = hexToRgba(colors[1], 0.4); bgBlob3.style.backgroundColor = hexToRgba(colors[2], 0.2);
-            audio.src = track.src; progressBar.value = 0; currentTimeEl.textContent = "0:00"; totalTimeEl.textContent = "0:00";
-            renderPlaylist(); if (autoSave) saveSettings();
+            bgBlob1.style.backgroundColor = hexToRgba(colors[0], 0.3); 
+            bgBlob2.style.backgroundColor = hexToRgba(colors[1], 0.4); 
+            bgBlob3.style.backgroundColor = hexToRgba(colors[2], 0.2);
+            audio.src = track.src; 
+            progressBar.value = 0; currentTimeEl.textContent = "0:00"; totalTimeEl.textContent = "0:00";
+            renderPlaylist(); 
+            if (autoSave) saveSettings();
         }
 
         function formatTime(secs) {
@@ -441,15 +494,24 @@
             initAudioContext();
             if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
             audio.play().then(() => {
-                isPlaying = true; playIcon.className = "fa-solid fa-pause"; vinylDisk.classList.remove('vinyl-paused'); saveSettings();
+                isPlaying = true; 
+                playIcon.className = "fa-solid fa-pause"; 
+                vinylDisk.classList.remove('vinyl-paused'); 
+                saveSettings();
             }).catch(err => {
-                console.warn("播放失敗:", err); isPlaying = false; playIcon.className = "fa-solid fa-play ml-0.5"; vinylDisk.classList.add('vinyl-paused');
+                console.warn("播放失敗:", err); 
+                isPlaying = false; 
+                playIcon.className = "fa-solid fa-play ml-0.5"; 
+                vinylDisk.classList.add('vinyl-paused');
             });
         }
 
         function togglePlay() {
             if (isPlaying) {
-                audio.pause(); isPlaying = false; playIcon.className = "fa-solid fa-play ml-0.5"; vinylDisk.classList.add('vinyl-paused'); saveSettings();
+                audio.pause(); isPlaying = false; 
+                playIcon.className = "fa-solid fa-play ml-0.5"; 
+                vinylDisk.classList.add('vinyl-paused'); 
+                saveSettings();
             } else { playAudioSafe(); }
         }
 
@@ -506,6 +568,7 @@
             repeatBtn.classList.toggle('text-zinc-400', !isRepeat); saveSettings();
         });
 
+        // === 檔案上傳與刪除 ===
         async function handleFiles(files) {
             if (!files || files.length === 0) return;
             let firstUploadedIndex = playlist.length;
@@ -513,21 +576,52 @@
 
             for (let idx = 0; idx < files.length; idx++) {
                 const file = files[idx], fileName = file.name.replace(/\.[^/.]+$/, ""), trackId = 'user-' + Date.now() + '-' + idx;
-                const trackData = { id: trackId, title: fileName, artist: "本地歌曲", themeColors: colorPalettes[idx % colorPalettes.length], fileBlob: file, isPreset: false };
-                await saveTrackToDB(trackData);
-                trackData.src = URL.createObjectURL(file); playlist.push(trackData);
+                const trackData = { 
+                    id: trackId, 
+                    title: fileName, 
+                    artist: "本地歌曲", 
+                    themeColors: colorPalettes[idx % colorPalettes.length], 
+                    fileBlob: file, 
+                    isPreset: false 
+                };
+                
+                await saveTrackToDB(trackData); // 等待寫入資料庫
+                trackData.src = URL.createObjectURL(file); // 產生可播放連結
+                playlist.push(trackData);
             }
-            renderPlaylist(); currentTrackIndex = firstUploadedIndex; loadTrack(currentTrackIndex); playAudioSafe();
+            
+            renderPlaylist(); 
+            loadTrack(firstUploadedIndex); 
+            playAudioSafe();
         }
 
         async function deleteSong(e, idx) {
             e.stopPropagation();
             const track = playlist[idx];
             if (track.isPreset) return;
+            
             await deleteTrackFromDB(track.id);
+            
+            // 釋放記憶體
+            if (track.src && track.src.startsWith('blob:')) {
+                URL.revokeObjectURL(track.src);
+            }
+
             playlist.splice(idx, 1);
-            if (currentTrackIndex >= playlist.length) currentTrackIndex = Math.max(0, playlist.length - 1);
-            loadTrack(currentTrackIndex); renderPlaylist();
+            
+            // ★重要修復：修正刪除歌曲時的 index 錯位問題
+            if (currentTrackIndex === idx) {
+                // 刪除的是當前播放的歌
+                currentTrackIndex = Math.min(idx, playlist.length - 1);
+                loadTrack(currentTrackIndex);
+                if (isPlaying) playAudioSafe();
+            } else if (currentTrackIndex > idx) {
+                // 刪除的是當前播放之前的歌，Index 必須減 1
+                currentTrackIndex--;
+                saveSettings();
+            }
+            
+            renderPlaylist();
         }
 
         uploadBtn.addEventListener('click', () => audioFileInput.click());
@@ -536,6 +630,7 @@
         window.addEventListener('dragover', (e) => e.preventDefault());
         window.addEventListener('drop', (e) => { e.preventDefault(); if (e.dataTransfer.files && e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files); });
 
+        // === 播放清單渲染 ===
         function renderPlaylist() {
             playlistContainer.innerHTML = '';
             playlist.forEach((item, idx) => {
@@ -546,12 +641,12 @@
                 }`;
                 row.innerHTML = `
                     <div class="flex items-center space-x-3 truncate">
-                        <div class="w-7 h-7 rounded-lg bg-black/5 dark:bg-white/10 flex items-center justify-center text-xs">
+                        <div class="w-7 h-7 rounded-lg bg-black/5 dark:bg-white/10 flex items-center justify-center text-xs shrink-0">
                             <i class="fa-solid ${isActive ? 'fa-compact-disc text-indigo-500 dark:text-indigo-400 animate-spin' : 'fa-music opacity-60'}"></i>
                         </div>
                         <div class="truncate"><div class="text-xs truncate">${item.title}</div><div class="text-[10px] opacity-60 truncate">${item.artist}</div></div>
                     </div>
-                    <div class="flex items-center space-x-2">
+                    <div class="flex items-center space-x-2 shrink-0">
                         ${isActive ? '<i class="fa-solid fa-chart-simple text-xs text-indigo-500 dark:text-indigo-400 mr-1 animate-pulse"></i>' : ''}
                         ${!item.isPreset ? `<button class="delete-btn opacity-50 hover:opacity-100 p-1 text-xs text-red-500 transition-opacity" title="刪除歌曲"><i class="fa-solid fa-trash"></i></button>` : ''}
                     </div>
@@ -564,7 +659,12 @@
         }
 
         playBtn.addEventListener('click', togglePlay); nextBtn.addEventListener('click', nextTrack); prevBtn.addEventListener('click', prevTrack);
-        loadSettingsAndPlaylist(); drawSpectrum(); drawBgParticles();
+        
+        // 啟動應用程式
+        initPlayer().then(() => {
+            drawSpectrum(); 
+            drawBgParticles();
+        });
     </script>
 </body>
 </html>
