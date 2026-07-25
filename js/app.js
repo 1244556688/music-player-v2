@@ -82,6 +82,54 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    // --- 3.5. 鍵盤快速鍵支援 (平板鍵鼠操作優化) ---
+    document.addEventListener('keydown', (event) => {
+        // 如果使用者正在輸入框或文字區域打字，不觸發快捷鍵
+        if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+            return;
+        }
+
+        switch (event.code) {
+            case 'Space': // 空白鍵：播放 / 暫停
+                event.preventDefault();
+                togglePlay();
+                break;
+
+            case 'ArrowRight': // 右方向鍵：快進 5 秒
+                event.preventDefault();
+                if (audio.duration) {
+                    audio.currentTime = Math.min(audio.duration, audio.currentTime + 5);
+                }
+                break;
+
+            case 'ArrowLeft': // 左方向鍵：快退 5 秒
+                event.preventDefault();
+                audio.currentTime = Math.max(0, audio.currentTime - 5);
+                break;
+
+            case 'ArrowUp': // 上方向鍵：增加音量 (+5%)
+                event.preventDefault();
+                audio.volume = Math.min(1, audio.volume + 0.05);
+                elements.volumeBar.value = audio.volume * 100;
+                audio.muted = false;
+                updateVolumeIcon();
+                break;
+
+            case 'ArrowDown': // 下方向鍵：減少音量 (-5%)
+                event.preventDefault();
+                audio.volume = Math.max(0, audio.volume - 0.05);
+                elements.volumeBar.value = audio.volume * 100;
+                updateVolumeIcon();
+                break;
+                
+            case 'KeyM': // M 鍵：靜音切換
+                event.preventDefault();
+                audio.muted = !audio.muted;
+                updateVolumeIcon();
+                break;
+        }
+    });
+
     // --- 4. 音訊上下文與頻譜 (Web Audio API) ---
     const initAudioContext = () => {
         if (!audioCtx) {
