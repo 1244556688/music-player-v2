@@ -208,7 +208,6 @@
 
     <!-- 登入與登出狀態控制腳本 -->
     <script>
-        // 初始化檢查登入狀態並顯示用戶名
         document.addEventListener('DOMContentLoaded', () => {
             const currentUser = localStorage.getItem('aura_current_user');
             const displayUsername = document.getElementById('displayUsername');
@@ -219,7 +218,6 @@
             }
         });
 
-        // 點擊 macOS 紅色按鈕登出並返回登入頁面 (假設你的登入頁叫做 login.html)
         function handleLogout() {
             localStorage.removeItem('aura_current_user');
             window.location.href = 'index.html';
@@ -228,7 +226,7 @@
 
     <script>
         const presetPlaylist = [
-            
+            {
                 title: "為自己吶喊",
                 artist: "justin & suno",
                 src: "./為自己吶喊.mp3",
@@ -236,6 +234,7 @@
             },
             {
                 title: "passion",
+                artist: "Justin",
                 src: "passion.mp3",
                 themeColors: ["#06b6d4", "#3b82f6", "#6366f1"]
             }
@@ -291,7 +290,6 @@
         const bgCanvas = document.getElementById('bgCanvas');
         const bgCtx = bgCanvas.getContext('2d');
 
-        // 深淺色切換機制
         themeToggle.addEventListener('click', () => {
             const html = document.documentElement;
             html.classList.toggle('dark');
@@ -652,3 +650,4 @@
     </script>
 </body>
 </html>
+
