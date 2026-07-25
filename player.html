@@ -219,7 +219,7 @@
 
         function handleLogout() {
             localStorage.removeItem('aura_current_user');
-            window.location.href = 'index.html'; // 假定你有 index.html，無則會報錯但不影響目前畫面
+            window.location.href = 'index.html';
         }
 
         // --- 音樂資料與變數 ---
@@ -450,7 +450,7 @@
                     bgCtx.lineTo(x, y);
                 }
                 bgCtx.strokeStyle = currentColors[j % currentColors.length];
-                bgCtx.lineWidth = (2 + j) * (window.devicePixelRatio || 1); // 配合 Retina 螢幕粗細
+                bgCtx.lineWidth = (2 + j) * (window.devicePixelRatio || 1);
                 bgCtx.globalAlpha = 0.15 + (bassVal / 255) * 0.2;
                 bgCtx.stroke();
             }
@@ -473,10 +473,9 @@
             const colors = track.themeColors || ["#6366f1", "#a855f7", "#ec4899"];
             vinylGlow.style.background = `linear-gradient(to right, ${colors[0]}, ${colors[1]}, ${colors[2]})`;
             
-            // 修正：補上透明度，避免覆寫原先的 Tailwind 半透明效果
-            bgBlob1.style.backgroundColor = hexToRgba(colors[0], 0.3); // /30
-            bgBlob2.style.backgroundColor = hexToRgba(colors[1], 0.4); // /40
-            bgBlob3.style.backgroundColor = hexToRgba(colors[2], 0.2); // /20
+            bgBlob1.style.backgroundColor = hexToRgba(colors[0], 0.3);
+            bgBlob2.style.backgroundColor = hexToRgba(colors[1], 0.4);
+            bgBlob3.style.backgroundColor = hexToRgba(colors[2], 0.2);
 
             audio.src = track.src;
             audio.currentTime = 0;
@@ -543,7 +542,6 @@
         function nextTrack() {
             if (isShuffle) {
                 let nextIdx = currentTrackIndex;
-                // 防呆機制：隨機播放不會抽到跟當前同一首歌
                 while(nextIdx === currentTrackIndex && playlist.length > 1) {
                     nextIdx = Math.floor(Math.random() * playlist.length);
                 }
