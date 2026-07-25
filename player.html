@@ -164,7 +164,7 @@
     </div>
 
     <script>
-        // 🌟 核心修正：抓取當前登入者名稱，用來隔離資料庫與設定檔！
+        // 🌟 核心：根據當前登入的使用者隔離 IndexedDB 與 LocalStorage
         const currentUser = localStorage.getItem('aura_current_user') || '訪客';
         const DB_NAME = 'MusicPlayerDB_' + currentUser;
         const STORE_NAME = 'uploaded_tracks';
@@ -269,7 +269,6 @@
                     isMuted, isShuffle, isRepeat, isPlaylistOpen,
                     theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light'
                 };
-                // 🌟 使用獨立的設定檔名稱
                 localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
             } catch (e) { console.error('LocalStorage 寫入失敗:', e); }
         }
@@ -279,7 +278,6 @@
             savedTracks.forEach(track => { if (track.fileBlob) track.src = URL.createObjectURL(track.fileBlob); });
             playlist = [...presetPlaylist, ...savedTracks];
 
-            // 🌟 讀取獨立的設定檔名稱
             const saved = localStorage.getItem(SETTINGS_KEY);
             if (saved) {
                 try {
@@ -541,7 +539,6 @@
         function renderPlaylist() {
             playlistContainer.innerHTML = '';
             playlist.forEach((item, idx) => {
-                const active = idx === currentcurrentTrackIndex; // Fix typo from quick edit: active = idx === currentTrackIndex
                 const isActive = idx === currentTrackIndex;
                 const row = document.createElement('div');
                 row.className = `flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all ${
