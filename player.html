@@ -206,6 +206,60 @@
     </div>
 
     <script>
+        // --- 💾 IndexedDB 大容量本地音樂儲存引擎 ---
+        const DB_NAME = 'MusicPlayerDB';
+        const STORE_NAME = 'uploaded_tracks';
+
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, 1);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                    }
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function saveTrackToDB(track) {
+            try {
+                const db = await openDB();
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                tx.objectStore(STORE_NAME).put(track);
+            } catch (e) {
+                console.error('IndexedDB 儲存音樂失敗:', e);
+            }
+        }
+
+        async function loadTracksFromDB() {
+            try {
+                const db = await openDB();
+                return new Promise((resolve) => {
+                    const tx = db.transaction(STORE_NAME, 'readonly');
+                    const store = tx.objectStore(STORE_NAME);
+                    const request = store.getAll();
+                    request.onsuccess = () => resolve(request.result || []);
+                    request.onerror = () => resolve([]);
+                });
+            } catch (e) {
+                console.error('IndexedDB 讀取音樂失敗:', e);
+                return [];
+            }
+        }
+
+        async function deleteTrackFromDB(id) {
+            try {
+                const db = await openDB();
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                tx.objectStore(STORE_NAME).delete(id);
+            } catch (e) {
+                console.error('IndexedDB 刪除失敗:', e);
+            }
+        }
+
         // --- 初始化帳戶 ---
         document.addEventListener('DOMContentLoaded', () => {
             const currentUser = localStorage.getItem('aura_current_user');
@@ -225,16 +279,20 @@
         // --- 音樂資料與變數 ---
         const presetPlaylist = [
             {
+                id: 'preset-1',
                 title: "為自己吶喊",
                 artist: "justin & suno",
                 src: "./為自己吶喊.mp3",
-                themeColors: ["#6366f1", "#a855f7", "#ec4899"]
+                themeColors: ["#6366f1", "#a855f7", "#ec4899"],
+                isPreset: true
             },
             {
+                id: 'preset-2',
                 title: "passion",
                 artist: "youtube",
                 src: "passion.mp3",
-                themeColors: ["#06b6d4", "#3b82f6", "#6366f1"]
+                themeColors: ["#06b6d4", "#3b82f6", "#6366f1"],
+                isPreset: true
             }
         ];
 
@@ -291,68 +349,91 @@
 
         // --- 💾 LocalStorage 設定儲存核心 ---
         function saveSettings() {
-            const settings = {
-                currentTrackIndex,
-                volume: volumeBar.value,
-                isMuted,
-                isShuffle,
-                isRepeat,
-                isPlaylistOpen,
-                theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light'
-            };
-            localStorage.setItem('player_settings', JSON.stringify(settings));
+            try {
+                const settings = {
+                    currentTrackIndex,
+                    currentTime: audio.currentTime || 0,
+                    volume: volumeBar.value,
+                    isMuted,
+                    isShuffle,
+                    isRepeat,
+                    isPlaylistOpen,
+                    theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+                };
+                localStorage.setItem('player_settings', JSON.stringify(settings));
+            } catch (e) {
+                console.error('LocalStorage 寫入失敗:', e);
+            }
         }
 
-        function loadSettings() {
+        async function loadSettingsAndPlaylist() {
+            // 1. 讀取 IndexedDB 本地上傳音樂
+            const savedTracks = await loadTracksFromDB();
+            savedTracks.forEach(track => {
+                if (track.fileBlob) {
+                    track.src = URL.createObjectURL(track.fileBlob);
+                }
+            });
+            playlist = [...presetPlaylist, ...savedTracks];
+
+            // 2. 讀取 LocalStorage 播放設定
             const saved = localStorage.getItem('player_settings');
-            if (!saved) return;
-            try {
-                const settings = JSON.parse(saved);
-                
-                // 1. 恢復歌曲
-                if (typeof settings.currentTrackIndex === 'number' && settings.currentTrackIndex < playlist.length) {
-                    currentTrackIndex = settings.currentTrackIndex;
-                }
+            if (saved) {
+                try {
+                    const settings = JSON.parse(saved);
+                    
+                    if (typeof settings.currentTrackIndex === 'number' && settings.currentTrackIndex < playlist.length) {
+                        currentTrackIndex = settings.currentTrackIndex;
+                    }
 
-                // 2. 恢復音量與靜音狀態
-                if (settings.volume !== undefined) {
-                    volumeBar.value = settings.volume;
-                    audio.volume = settings.volume / 100;
-                }
-                if (settings.isMuted !== undefined) {
-                    isMuted = settings.isMuted;
-                    audio.muted = isMuted;
-                }
-                updateVolumeIcon();
+                    if (settings.volume !== undefined) {
+                        volumeBar.value = settings.volume;
+                        audio.volume = settings.volume / 100;
+                    }
+                    if (settings.isMuted !== undefined) {
+                        isMuted = settings.isMuted;
+                        audio.muted = isMuted;
+                    }
+                    updateVolumeIcon();
 
-                // 3. 恢復播放模式 (隨機/循環)
-                if (settings.isShuffle) {
-                    isShuffle = true;
-                    shuffleBtn.classList.add('text-indigo-600', 'dark:text-indigo-400');
-                    shuffleBtn.classList.remove('text-zinc-400');
-                }
-                if (settings.isRepeat) {
-                    isRepeat = true;
-                    repeatBtn.classList.add('text-indigo-600', 'dark:text-indigo-400');
-                    repeatBtn.classList.remove('text-zinc-400');
-                }
+                    if (settings.isShuffle) {
+                        isShuffle = true;
+                        shuffleBtn.classList.add('text-indigo-600', 'dark:text-indigo-400');
+                        shuffleBtn.classList.remove('text-zinc-400');
+                    }
+                    if (settings.isRepeat) {
+                        isRepeat = true;
+                        repeatBtn.classList.add('text-indigo-600', 'dark:text-indigo-400');
+                        repeatBtn.classList.remove('text-zinc-400');
+                    }
 
-                // 4. 恢復主題 (深色/淺色)
-                if (settings.theme === 'light') {
-                    document.documentElement.classList.remove('dark');
-                    themeIcon.className = "fa-solid fa-sun";
-                } else {
-                    document.documentElement.classList.add('dark');
-                    themeIcon.className = "fa-solid fa-moon";
-                }
+                    if (settings.theme === 'light') {
+                        document.documentElement.classList.remove('dark');
+                        themeIcon.className = "fa-solid fa-sun";
+                    } else {
+                        document.documentElement.classList.add('dark');
+                        themeIcon.className = "fa-solid fa-moon";
+                    }
 
-                // 5. 恢復播放清單抽屜狀態
-                if (settings.isPlaylistOpen) {
-                    togglePlaylistDrawer(true);
+                    if (settings.isPlaylistOpen) {
+                        togglePlaylistDrawer(true);
+                    }
+
+                    // 載入當前歌曲
+                    loadTrack(currentTrackIndex, false);
+
+                    // 恢復之前的播放時間
+                    if (settings.currentTime && !isNaN(settings.currentTime)) {
+                        audio.currentTime = settings.currentTime;
+                    }
+                } catch (e) {
+                    console.warn('載入 LocalStorage 設定失敗:', e);
+                    loadTrack(0, false);
                 }
-            } catch (e) {
-                console.warn('載入設定失敗', e);
+            } else {
+                loadTrack(0, false);
             }
+            renderPlaylist();
         }
 
         // --- 主題切換 ---
@@ -536,7 +617,11 @@
         }
 
         // --- 播放器核心邏輯 ---
-        function loadTrack(index) {
+        function loadTrack(index, autoSave = true) {
+            if (!playlist || playlist.length === 0) return;
+            if (index < 0 || index >= playlist.length) index = 0;
+            
+            currentTrackIndex = index;
             const track = playlist[index];
             songTitle.textContent = track.title;
             artistName.textContent = track.artist;
@@ -549,12 +634,12 @@
             bgBlob3.style.backgroundColor = hexToRgba(colors[2], 0.2);
 
             audio.src = track.src;
-            audio.currentTime = 0;
             progressBar.value = 0;
             currentTimeEl.textContent = "0:00";
             totalTimeEl.textContent = "0:00";
+            
             renderPlaylist();
-            saveSettings();
+            if (autoSave) saveSettings();
         }
 
         function formatTime(secs) {
@@ -572,6 +657,7 @@
                 isPlaying = true;
                 playIcon.className = "fa-solid fa-pause";
                 vinylDisk.classList.remove('vinyl-paused');
+                saveSettings();
             }).catch(err => {
                 console.warn("播放失敗:", err);
                 isPlaying = false;
@@ -586,11 +672,13 @@
                 isPlaying = false;
                 playIcon.className = "fa-solid fa-play ml-0.5";
                 vinylDisk.classList.add('vinyl-paused');
+                saveSettings();
             } else {
                 playAudioSafe();
             }
         }
 
+        // 定期自動同步進度至 LocalStorage
         audio.addEventListener('timeupdate', () => {
             if (audio.duration) {
                 const pct = (audio.currentTime / audio.duration) * 100;
@@ -598,6 +686,11 @@
                 currentTimeEl.textContent = formatTime(audio.currentTime);
                 totalTimeEl.textContent = formatTime(audio.duration);
             }
+        });
+
+        // 離開或重新整理頁面時保存最後播放時間
+        window.addEventListener('beforeunload', () => {
+            saveSettings();
         });
 
         audio.addEventListener('ended', () => {
@@ -634,6 +727,7 @@
                 const targetTime = (e.target.value / 100) * audio.duration;
                 audio.currentTime = targetTime;
                 currentTimeEl.textContent = formatTime(targetTime);
+                saveSettings();
             }
         });
 
@@ -678,8 +772,8 @@
             saveSettings();
         });
 
-        // --- 本地檔案上傳支援 ---
-        function handleFiles(files) {
+        // --- 本地檔案上傳並永久寫入 DB ---
+        async function handleFiles(files) {
             if (!files || files.length === 0) return;
             let firstUploadedIndex = playlist.length;
             const colorPalettes = [
@@ -688,21 +782,51 @@
                 ["#ec4899", "#f59e0b", "#10b981"]
             ];
 
-            Array.from(files).forEach((file, idx) => {
-                const objectUrl = URL.createObjectURL(file);
+            for (let idx = 0; idx < files.length; idx++) {
+                const file = files[idx];
                 const fileName = file.name.replace(/\.[^/.]+$/, "");
-                playlist.push({
+                const trackId = 'user-' + Date.now() + '-' + idx;
+                
+                const trackData = {
+                    id: trackId,
                     title: fileName,
                     artist: "本地歌曲",
-                    src: objectUrl,
-                    themeColors: colorPalettes[idx % colorPalettes.length]
-                });
-            });
+                    themeColors: colorPalettes[idx % colorPalettes.length],
+                    fileBlob: file,
+                    isPreset: false
+                };
+
+                // 1. 寫入 IndexedDB 永久保存二進位檔
+                await saveTrackToDB(trackData);
+
+                // 2. 建立暫時 ObjectURL 供目前播放器使用
+                trackData.src = URL.createObjectURL(file);
+                playlist.push(trackData);
+            }
 
             renderPlaylist();
             currentTrackIndex = firstUploadedIndex;
             loadTrack(currentTrackIndex);
             playAudioSafe();
+        }
+
+        async function deleteSong(e, idx) {
+            e.stopPropagation();
+            const track = playlist[idx];
+            if (track.isPreset) return;
+
+            // 從 DB 移除
+            await deleteTrackFromDB(track.id);
+
+            // 從記憶體清單移除
+            playlist.splice(idx, 1);
+
+            if (currentTrackIndex >= playlist.length) {
+                currentTrackIndex = Math.max(0, playlist.length - 1);
+            }
+
+            loadTrack(currentTrackIndex);
+            renderPlaylist();
         }
 
         uploadBtn.addEventListener('click', () => audioFileInput.click());
@@ -717,7 +841,7 @@
             }
         });
 
-        // --- 渲染清單 ---
+        // --- 渲染清單 (增加刪除按鈕) ---
         function renderPlaylist() {
             playlistContainer.innerHTML = '';
             playlist.forEach((item, idx) => {
@@ -728,6 +852,7 @@
                     ? 'bg-indigo-500/15 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 font-semibold border border-indigo-500/30' 
                     : 'hover:bg-black/5 dark:hover:bg-white/10 text-zinc-700 dark:text-zinc-300'
                 }`;
+                
                 row.innerHTML = `
                     <div class="flex items-center space-x-3 truncate">
                         <div class="w-7 h-7 rounded-lg bg-black/5 dark:bg-white/10 flex items-center justify-center text-xs">
@@ -738,27 +863,34 @@
                             <div class="text-[10px] opacity-60 truncate">${item.artist}</div>
                         </div>
                     </div>
-                    ${active ? '<i class="fa-solid fa-chart-simple text-xs text-indigo-500 dark:text-indigo-400 mr-1 animate-pulse"></i>' : ''}
+                    <div class="flex items-center space-x-2">
+                        ${active ? '<i class="fa-solid fa-chart-simple text-xs text-indigo-500 dark:text-indigo-400 mr-1 animate-pulse"></i>' : ''}
+                        ${!item.isPreset ? `<button class="delete-btn opacity-50 hover:opacity-100 p-1 text-xs text-red-500 transition-opacity" title="刪除歌曲"><i class="fa-solid fa-trash"></i></button>` : ''}
+                    </div>
                 `;
+
                 row.addEventListener('click', () => {
                     currentTrackIndex = idx;
                     loadTrack(currentTrackIndex);
                     playAudioSafe();
                 });
+
+                const deleteBtn = row.querySelector('.delete-btn');
+                if (deleteBtn) {
+                    deleteBtn.addEventListener('click', (e) => deleteSong(e, idx));
+                }
+
                 playlistContainer.appendChild(row);
             });
         }
 
-        // --- 初始化綁定與設定載入 ---
+        // --- 初始化綁定與啟動流程 ---
         playBtn.addEventListener('click', togglePlay);
         nextBtn.addEventListener('click', nextTrack);
         prevBtn.addEventListener('click', prevTrack);
 
-        // 先載入預設歌曲，再讀取儲存的設定（如最後聽哪一首）
-        loadTrack(0);
-        loadSettings();
-        // 確保載入設定後，歌曲畫面同步更新
-        loadTrack(currentTrackIndex);
+        // 啟動流程：優先非同步讀取數據庫與 LocalStorage
+        loadSettingsAndPlaylist();
 
         drawSpectrum();
         drawBgParticles();
