@@ -39,10 +39,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         playlistContainer: document.getElementById('playlistContainer'),
         themeToggle: document.getElementById('themeToggle'),
         themeIcon: document.getElementById('themeIcon'),
-        fullscreenBtn: document.getElementById('fullscreenBtn')
+        fullscreenBtn: document.getElementById('fullscreenBtn'),
+        // 備份與還原按鈕 (若 HTML 內有對應 ID)
+        exportBackupBtn: document.getElementById('exportBackupBtn'),
+        importBackupBtn: document.getElementById('importBackupBtn'),
+        importBackupInput: document.getElementById('importBackupInput')
     };
 
-    // --- 3. 綁定基本 UI 互動事件 (確保按鈕一定有作用) ---
+    // --- 3. 綁定基本 UI 互動事件 ---
     
     // 檔案上傳觸發
     const triggerUpload = () => elements.audioFileInput.click();
@@ -84,45 +88,39 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // --- 3.5. 鍵盤快速鍵支援 (平板鍵鼠操作優化) ---
     document.addEventListener('keydown', (event) => {
-        // 如果使用者正在輸入框或文字區域打字，不觸發快捷鍵
         if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
             return;
         }
 
         switch (event.code) {
-            case 'Space': // 空白鍵：播放 / 暫停
+            case 'Space':
                 event.preventDefault();
                 togglePlay();
                 break;
-
-            case 'ArrowRight': // 右方向鍵：快進 5 秒
+            case 'ArrowRight':
                 event.preventDefault();
                 if (audio.duration) {
                     audio.currentTime = Math.min(audio.duration, audio.currentTime + 5);
                 }
                 break;
-
-            case 'ArrowLeft': // 左方向鍵：快退 5 秒
+            case 'ArrowLeft':
                 event.preventDefault();
                 audio.currentTime = Math.max(0, audio.currentTime - 5);
                 break;
-
-            case 'ArrowUp': // 上方向鍵：增加音量 (+5%)
+            case 'ArrowUp':
                 event.preventDefault();
                 audio.volume = Math.min(1, audio.volume + 0.05);
                 elements.volumeBar.value = audio.volume * 100;
                 audio.muted = false;
                 updateVolumeIcon();
                 break;
-
-            case 'ArrowDown': // 下方向鍵：減少音量 (-5%)
+            case 'ArrowDown':
                 event.preventDefault();
                 audio.volume = Math.max(0, audio.volume - 0.05);
                 elements.volumeBar.value = audio.volume * 100;
                 updateVolumeIcon();
                 break;
-                
-            case 'KeyM': // M 鍵：靜音切換
+            case 'KeyM':
                 event.preventDefault();
                 audio.muted = !audio.muted;
                 updateVolumeIcon();
@@ -179,8 +177,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const loadSong = (index) => {
         if (playlist.length === 0) return;
         const song = playlist[index];
-        const blobUrl = URL.createObjectURL(song.file);
-        audio.src = blobUrl;
+        
+        // 確保 song.file 存在 (如果是匯入的備份，可能會需要處理 File 物件)
+        if (song.file instanceof File) {
+            const blobUrl = URL.createObjectURL(song.file);
+            audio.src = blobUrl;
+        }
         
         elements.songTitle.textContent = song.title;
         elements.artistName.textContent = song.artist;
@@ -193,7 +195,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             elements.defaultCoverIcon.classList.remove('hidden');
         }
         
-        // 更新清單 UI
         document.querySelectorAll('.playlist-item').forEach((el, i) => {
             el.classList.toggle('bg-indigo-500/20', i === index);
             el.classList.toggle('border-indigo-500/50', i === index);
@@ -315,9 +316,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
             
             try {
-                await dbModule.saveSong(songData); // 嘗試存進資料庫
+                await dbModule.saveSong(songData);
             } catch (err) {
-                console.warn("無法儲存至資料庫，但仍會加入當前播放清單:", err);
+                console.warn("無法儲存至資料庫:", err);
             }
             
             playlist.push(songData);
@@ -361,7 +362,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 try {
                     await dbModule.deleteSong(song.id);
                 } catch (err) {
-                    console.warn("無法從資料庫刪除，僅從畫面移除:", err);
+                    console.warn("無法從資料庫刪除:", err);
                 }
                 playlist.splice(index, 1);
                 renderPlaylist();
@@ -371,13 +372,72 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // --- 7. 最後再安全地載入本地資料庫 ---
+    // --- 7. 播放清單備份與還原功能 (JSON 匯出/匯入) ---
+    if (elements.exportBackupBtn) {
+        elements.exportBackupBtn.addEventListener('click', () => {
+            if (playlist.length === 0) {
+                alert("目前播放清單是空的，沒有可備份的紀錄！");
+                return;
+            }
+            // 為了輸出 JSON，我們把 File 物件以外的中繼資料（歌名、歌手、封面）打包
+            const backupData = playlist.map(song => ({
+                id: song.id,
+                title: song.title,
+                artist: song.artist,
+                cover: song.cover
+            }));
+
+            const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `music-player-backup-${new Date().toISOString().slice(0, 10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+    }
+
+    if (elements.importBackupBtn && elements.importBackupInput) {
+        elements.importBackupBtn.addEventListener('click', () => {
+            elements.importBackupInput.click();
+        });
+
+        elements.importBackupInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+                try {
+                    const importedSongs = JSON.parse(event.target.result);
+                    if (!Array.isArray(importedSongs)) throw new Error("格式錯誤");
+
+                    for (const song of importedSongs) {
+                        // 檢查是否已存在
+                        const exists = playlist.some(s => s.id === song.id || s.title === song.title);
+                        if (!exists) {
+                            playlist.push(song);
+                            await dbModule.saveSong(song).catch(() => {});
+                        }
+                    }
+                    renderPlaylist();
+                    alert(`成功匯入 ${importedSongs.length} 筆音樂紀錄！`);
+                } catch (err) {
+                    alert("匯入失敗：備份檔案格式不正確。");
+                    console.error(err);
+                }
+            };
+            reader.readAsText(file);
+        });
+    }
+
+    // --- 8. 最後再安全地載入本地資料庫 ---
     try {
         await dbModule.initDB();
         playlist = await dbModule.getAllSongs() || [];
         renderPlaylist();
         if (playlist.length > 0) loadSong(0);
     } catch (error) {
-        console.warn("IndexedDB 初始化失敗，您的音樂可能無法在下次開啟時保留。", error);
+        console.warn("IndexedDB 初始化失敗。", error);
     }
 });
