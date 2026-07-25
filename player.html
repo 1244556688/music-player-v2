@@ -152,6 +152,8 @@
 
             <div id="playlistDrawer" class="w-0 opacity-0 max-h-0 md:max-h-none overflow-hidden transition-all duration-300 ease-in-out bg-black/5 dark:bg-black/30 border-t md:border-t-0 md:border-l border-black/10 dark:border-white/10 flex flex-col">
                 <div class="p-5 w-full md:w-80 flex flex-col h-full min-h-[420px]">
+                    
+                    <!-- 頂部標題與功能按鈕 -->
                     <div class="flex items-center justify-between mb-3 px-1">
                         <div class="text-xs font-semibold tracking-wider text-zinc-500 dark:text-zinc-400 uppercase">播放清單</div>
                         <div class="flex items-center gap-2">
@@ -166,7 +168,21 @@
                             </button>
                         </div>
                     </div>
-                    <div id="playlistContainer" class="space-y-1.5 flex-1 max-h-[380px] overflow-y-auto pr-1"></div>
+
+                    <!-- 搜尋與排序工具列 -->
+                    <div class="flex items-center gap-2 mb-3">
+                        <div class="relative flex-1">
+                            <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-zinc-400"></i>
+                            <input type="text" id="searchInput" placeholder="搜尋歌名或演出者..." class="w-full text-xs bg-black/5 dark:bg-zinc-800/60 border border-black/5 dark:border-white/10 rounded-lg pl-7 pr-3 py-1.5 focus:outline-none focus:border-indigo-500/50 text-zinc-800 dark:text-zinc-200 placeholder-zinc-400">
+                        </div>
+                        <select id="sortSelect" class="text-[11px] bg-black/5 dark:bg-zinc-800/60 border border-black/5 dark:border-white/10 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500/50 text-zinc-700 dark:text-zinc-300 cursor-pointer">
+                            <option value="default">預設排序</option>
+                            <option value="title-asc">歌名 (A-Z)</option>
+                            <option value="title-desc">歌名 (Z-A)</option>
+                        </select>
+                    </div>
+
+                    <div id="playlistContainer" class="space-y-1.5 flex-1 max-h-[330px] overflow-y-auto pr-1"></div>
                 </div>
             </div>
         </div>
@@ -270,6 +286,7 @@
         const playlistToggle = document.getElementById('playlistToggle'), playlistDrawer = document.getElementById('playlistDrawer'), playlistContainer = document.getElementById('playlistContainer');
         const uploadBtn = document.getElementById('uploadBtn'), drawerUploadBtn = document.getElementById('drawerUploadBtn'), audioFileInput = document.getElementById('audioFileInput');
         const exportJsonBtn = document.getElementById('exportJsonBtn'), importJsonBtn = document.getElementById('importJsonBtn'), jsonFileInput = document.getElementById('jsonFileInput');
+        const searchInput = document.getElementById('searchInput'), sortSelect = document.getElementById('sortSelect');
         const bgBlob1 = document.getElementById('bgBlob1'), bgBlob2 = document.getElementById('bgBlob2'), bgBlob3 = document.getElementById('bgBlob3');
         const spectrumCanvas = document.getElementById('spectrumCanvas'), specCtx = spectrumCanvas.getContext('2d');
         const bgCanvas = document.getElementById('bgCanvas'), bgCtx = bgCanvas.getContext('2d');
@@ -310,7 +327,6 @@
 
                     loadTrack(currentTrackIndex, false);
 
-                    // 修復點：等待 metadata 載入後才套用上次的播放進度，避免歸零
                     if (settings.currentTime && !isNaN(settings.currentTime) && settings.currentTime > 0) {
                         const restoreProgress = () => {
                             audio.currentTime = settings.currentTime;
@@ -338,7 +354,6 @@
             else document.exitFullscreen();
         });
 
-        // 鍵盤快速鍵支援
         document.addEventListener('keydown', (event) => {
             if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') return;
 
@@ -582,30 +597,33 @@
             renderPlaylist(); currentTrackIndex = firstUploadedIndex; loadTrack(currentTrackIndex); playAudioSafe();
         }
 
-        async function deleteSong(e, idx) {
+        async function deleteSong(e, trackId) {
             e.stopPropagation();
+            const idx = playlist.findIndex(t => t.id === trackId);
+            if (idx === -1) return;
             const track = playlist[idx];
             if (track.isPreset) return;
             await deleteTrackFromDB(track.id);
             if (track.src && track.src.startsWith('blob:')) URL.revokeObjectURL(track.src);
-            playlist.splice(idx, 1);
+            
             if (currentTrackIndex === idx) {
+                playlist.splice(idx, 1);
                 currentTrackIndex = Math.min(idx, playlist.length - 1);
                 loadTrack(currentTrackIndex); if (isPlaying) playAudioSafe();
-            } else if (currentTrackIndex > idx) {
-                currentTrackIndex--; saveSettings();
+            } else {
+                if (currentTrackIndex > idx) currentTrackIndex--;
+                playlist.splice(idx, 1);
+                saveSettings();
             }
             renderPlaylist();
         }
 
-        // --- JSON 匯出與匯入功能 ---
         exportJsonBtn.addEventListener('click', () => {
-            // 只匯出清單的純文字中繼資料（排除 Blob 物件以免 JSON 檔案過大或無法序列化）
             const exportData = playlist.map(track => ({
                 id: track.id,
                 title: track.title,
                 artist: track.artist,
-                src: track.src.startsWith('blob:') ? '' : track.src, // 若是本地 blob 則保留空字串或原路徑
+                src: track.src.startsWith('blob:') ? '' : track.src,
                 themeColors: track.themeColors,
                 isPreset: track.isPreset
             }));
@@ -632,14 +650,13 @@
 
                     let addedCount = 0;
                     for (const track of importedTracks) {
-                        // 檢查是否已存在相同 ID 或標題避免重複
                         const exists = playlist.some(t => t.id === track.id || t.title === track.title);
                         if (!exists) {
                             const newTrack = {
                                 id: track.id || ('imported-' + Date.now() + '-' + Math.random()),
                                 title: track.title || '未知曲目',
                                 artist: track.artist || 'JSON 匯入',
-                                src: track.src || './為自己吶喊.mp3', // 預設路徑防呆
+                                src: track.src || './為自己吶喊.mp3',
                                 themeColors: track.themeColors || ["#6366f1", "#a855f7", "#ec4899"],
                                 isPreset: false
                             };
@@ -654,7 +671,7 @@
                     alert('JSON 解析失敗，請確認檔案格式是否正確。');
                     console.error(err);
                 }
-                jsonFileInput.value = ''; // 清空以允許重複選取同個檔案
+                jsonFileInput.value = '';
             };
             reader.readAsText(file);
         });
@@ -665,10 +682,33 @@
         window.addEventListener('dragover', (e) => e.preventDefault());
         window.addEventListener('drop', (e) => { e.preventDefault(); if (e.dataTransfer.files && e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files); });
 
+        searchInput.addEventListener('input', () => renderPlaylist());
+        sortSelect.addEventListener('change', () => renderPlaylist());
+
         function renderPlaylist() {
             playlistContainer.innerHTML = '';
-            playlist.forEach((item, idx) => {
-                const isActive = idx === currentTrackIndex;
+            const keyword = searchInput.value.toLowerCase().trim();
+            const sortMode = sortSelect.value;
+
+            // 1. 過濾搜尋結果
+            let displayList = playlist.map((item, originalIndex) => ({ item, originalIndex })).filter(({ item }) => {
+                return item.title.toLowerCase().includes(keyword) || item.artist.toLowerCase().includes(keyword);
+            });
+
+            // 2. 套用排序
+            if (sortMode === 'title-asc') {
+                displayList.sort((a, b) => a.item.title.localeCompare(b.item.title, 'zh-TW'));
+            } else if (sortMode === 'title-desc') {
+                displayList.sort((a, b) => b.item.title.localeCompare(a.item.title, 'zh-TW'));
+            }
+
+            if (displayList.length === 0) {
+                playlistContainer.innerHTML = `<div class="text-center py-6 text-xs text-zinc-400">找不到符合的歌曲</div>`;
+                return;
+            }
+
+            displayList.forEach(({ item, originalIndex }) => {
+                const isActive = originalIndex === currentTrackIndex;
                 const row = document.createElement('div');
                 row.className = `flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all ${
                     isActive ? 'bg-indigo-500/15 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 font-semibold border border-indigo-500/30' : 'hover:bg-black/5 dark:hover:bg-white/10 text-zinc-700 dark:text-zinc-300'
@@ -685,9 +725,9 @@
                         ${!item.isPreset ? `<button class="delete-btn opacity-50 hover:opacity-100 p-1 text-xs text-red-500 transition-opacity" title="刪除歌曲"><i class="fa-solid fa-trash"></i></button>` : ''}
                     </div>
                 `;
-                row.addEventListener('click', () => { currentTrackIndex = idx; loadTrack(currentTrackIndex); playAudioSafe(); });
+                row.addEventListener('click', () => { currentTrackIndex = originalIndex; loadTrack(currentTrackIndex); playAudioSafe(); });
                 const deleteBtn = row.querySelector('.delete-btn');
-                if (deleteBtn) deleteBtn.addEventListener('click', (e) => deleteSong(e, idx));
+                if (deleteBtn) deleteBtn.addEventListener('click', (e) => deleteSong(e, item.id));
                 playlistContainer.appendChild(row);
             });
         }
